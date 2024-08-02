@@ -62,24 +62,73 @@ Implement the trading algorithm as per the instructions. You should initialize n
 ```r
 # Initialize columns for trade type, cost/proceeds, and accumulated shares in amd_df
 amd_df$trade_type <- NA
-amd_df$costs_proceeds <- NA  # Corrected column name
-amd_df$accumulated_shares <- 0  # Initialize if needed for tracking
-
+amd_df$costs_proceeds <- NA # Corrected column name
+amd_df$accumulated_shares <- 0 # Initialize if needed for tracking
 # Initialize variables for trading logic
 previous_price <- 0
 share_size <- 100
 accumulated_shares <- 0
-
+#Looping
 for (i in 1:nrow(amd_df)) {
-# Fill your code here
+# Other Variables
+current_day <- as.Date(amd_df$date[i])
+current_price <- amd_df$close[i]
+#Previous Price
+if(i==1){
+ previous_price <- 0
+ amd_df$previous_price[i] <- previous_price
+}else {
+ previous_day<- as.Date(amd_df$date[i-1])
+ previous_price <- amd_df$close[i-1]
+ amd_df$previous_price[i] <- previous_price
+ }
+final_day <- as.Date(max(amd_df$date))
+#Check previous_price, buy/sell and update costs_proceeds
+ if(previous_price == 0) {
+amd_df$trade_type[i] <-"buy"
+amd_df$costs_proceeds[i] <- amd_df$close[i]*-share_size
 }
+{
+ #Make sure it doesn't buy on final day as well as setting up buy algo
+if(current_price < previous_price && current_day != final_day) {
+amd_df$trade_type[i] <- "buy"
+amd_df$costs_proceeds[i] <- amd_df$close[i]*-share_size
+}
+if(is.na(amd_df$costs_proceeds[i])){
+ amd_df$costs_proceeds[i] <- 0
+}
+ }
+#Check trade_type and update accumulated_shares
+{
+ if(!is.na(amd_df$trade_type[i]) && amd_df$trade_type[i] == "buy") {
+ accumulated_shares<- accumulated_shares+share_size
+amd_df$accumulated_shares[i] <- accumulated_shares
+} else {
+ amd_df$accumulated_shares[i]<- accumulated_shares
+ }
+}
+{
+#Last Day
+if(current_day == final_day){
+ amd_df$trade_type[i] <- "sell"
+ amd_df$costs_proceeds[i] <- amd_df$accumulated_shares[i-1]*amd_df$close[i]
+ amd_df$accumulated_shares[i] <- 0
+ }
+}
+ }
 ```
 
 
 ### Step 3: Customize Trading Period
 - Define a trading period you wanted in the past five years 
 ```r
-# Fill your code here
+# Initialise start_date/end_date
+start_date <- as.Date("2023-04-17") #2023-07-8 (date before floating point precision occurs)
+end_date <- as.Date("2024-03-13")
+#set trading period
+amd_df <- amd_df[amd_df$date >= start_date & amd_df$date <= end_date, ]
+#reset the rows in the numbers column
+row.names(amd_df) <- NULL
 ```
 
 
@@ -91,7 +140,18 @@ After running your algorithm, check if the trades were executed as expected. Cal
 - ROI Formula: $$\text{ROI} = \left( \frac{\text{Total Profit or Loss}}{\text{Total Capital Invested}} \right) \times 100$$
 
 ```r
-# Fill your code here
+# Find and Print Profit/Loss, rounded to account for floating point precision
+total_pl <- sum(amd_df$costs_proceeds)
+print(round(total_pl))
+
+#Invested Capital
+invested_capital <- -sum(amd_df$costs_proceeds[amd_df$trade_type == "buy"], na.rm = TRUE)
+print(invested_capital)
+
+#Calculate ROI
+roi <- total_pl/invested_capital*100
+print(roi)
+
 ```
 
 ### Step 5: Profit-Taking Strategy or Stop-Loss Mechanisum (Choose 1)
@@ -100,7 +160,88 @@ After running your algorithm, check if the trades were executed as expected. Cal
 
 
 ```r
-# Fill your code here
+# OPTION 1
+#initialise column
+amd_df$avg_purchase_price <- 0
+amd_df$total_investment <- 0
+amd_df$PL <- 0
+#initialise variables
+amd_df$avg_purchase_price[1] <- amd_df$close[1]
+amd_df$total_investment[1] <- amd_df$costs_proceeds[1]*-1
+amd_df$PL[1] <- amd_df$costs_proceeds[1]
+#Loop
+for (i in 2:nrow(amd_df)){
+ # Update accumulated shares
+ if(!is.na(amd_df$trade_type[i]) && amd_df$trade_type[i] == "buy"){
+ amd_df$accumulated_shares [i] <- amd_df$accumulated_shares[i-1] + share_size
+ }else{amd_df$accumulated_shares[i] <- amd_df$accumulated_shares[i]}
+
+ #Find running weighted average purchase price
+ if(!is.na(amd_df$trade_type[i]) && amd_df$trade_type[i] == "buy"){
+ amd_df$total_investment[i] <- -amd_df$costs_proceeds[i] + amd_df$total_investment[i-1]
+ amd_df$avg_purchase_price[i] <- amd_df$total_investment[i]/amd_df$accumulated_shares[i]
+ }else{
+ amd_df$total_investment[i] <- amd_df$total_investment[i-1]
+ amd_df$avg_purchase_price[i] <- amd_df$avg_purchase_price[i-1]
+ }
+
+ # Create variable when price increases by 30% from avg purchase price
+ sell_price_variable <- amd_df$close[i] >= 1.3*amd_df$avg_purchase_price[i]
+ # Fix issue with previous buy changing to sell affecting avg_purchase_price
+ if(sell_price_variable && amd_df$trade_type[i]=="buy" && !is.na(amd_df$trade_type[i])){
+ amd_df$avg_purchase_price[i] <- amd_df$avg_purchase_price[i-1]
+ }
+
+ if(sell_price_variable){
+ # update trade_type
+ amd_df$trade_type[i] <- "sell"
+
+ # sell half of accumulated_shares using integer division to not half decimal shares
+ amd_df$accumulated_shares[i] <- amd_df$accumulated_shares[i-1]-amd_df$accumulated_shares
+[i-1]%/%2
+ amd_df$total_investment[i] <- amd_df$total_investment[i-1]/2
+ # update cost_proceeds
+ amd_df$costs_proceeds[i] <- amd_df$accumulated_shares[i-1]%/%2*amd_df$close[i]
+}
+
+
+ # Update accumulated shares
+ if(!is.na(amd_df$trade_type[i]) && amd_df$trade_type[i] == "buy"){
+ amd_df$accumulated_shares [i] <- amd_df$accumulated_shares[i-1] + share_size
+ }else{amd_df$accumulated_shares[i] <- amd_df$accumulated_shares[i]}
+
+ if(is.na(amd_df$trade_type[i])){
+ amd_df$accumulated_shares[i] <- amd_df$accumulated_shares[i-1]
+}
+# Account for different scenarios
+ if(amd_df$accumulated_shares[i-1] == 1){
+ amd_df$accumulated_shares[i] <- 0
+ }
+ if(amd_df$accumulated_shares[i] == 0){
+ amd_df$avg_purchase_price[i] <- amd_df$avg_purchase_price[i-1]
+ amd_df$total_investment[i] <- amd_df$total_investment[i-1]
+ }
+ # PL column
+ amd_df$PL[i] <- amd_df$PL[i-1] + amd_df$costs_proceeds[i]
+}
+ # Final Day
+ if(current_day == final_day){
+ amd_df$trade_type[i] <- "sell"
+ amd_df$costs_proceeds[i] <- amd_df$accumulated_shares[i-1]*amd_df$close[i]
+ amd_df$accumulated_shares[i] <- 0
+ }
+# Find and Print Profit/Loss
+total_pl <- sum(amd_df$costs_proceeds)
+print(total_pl)
+
+# Invested Capital
+invested_capital <- -sum(amd_df$costs_proceeds[amd_df$trade_type == "buy"], na.rm = TRUE)
+print(invested_capital)
+
+# Calculate ROI
+roi <- total_pl/invested_capital*100
+print(roi)
+
 ```
 
 
@@ -108,13 +249,220 @@ After running your algorithm, check if the trades were executed as expected. Cal
 - Did your P/L and ROI improve over your chosen period?
 - Relate your results to a relevant market event and explain why these outcomes may have occurred.
 
+Here are my results with ROI rounded to 2 decimal places for simplicity:
+ - PL with profit taking strategy = $348,197.2
+ - Invested capital with profit taking strategy = $1,283,291
+ - Roi with profit taking strategy = 27.13%
+ - PL without profit taking strategy = $747,263
+ - Invested capital without profit taking strategy = $1,298,032
+ - Roi without profit taking strategy = 57.57%
 
+As we can see from the 17th of April 2023 to the 13th of March 2024 both our PL and ROI returned a
+decreased value utilising our profit-taking strategy. This is mainly because the final price was only slightly below
+the peak height for the stock price in this period, thus when the algorithm made in step two sold on the final day
+it had more shares than the algorithm we created with the profit-taking strategy. Our profit-taking algorithm first
+approximately 6500 of its shares by the end of December as well as another 1000 shares in mid-January.
+In terms of relevant market events, the reason shares rose 30% above the average price by the end of
+December was due to the release of the new AMD Instinct MI300 Accelerator which implements advanced AI.
+The accelerator was tested on their OCP complaint board known as the MI300 platform and had 2.4 times the
+memory of their competitors’ Nvidia H100 HGX board as well as a 30% improvement to the compute server.
+This led to a fairly steady incline in closing price all the way through December. However, selling the majority of
+our stock in December was not optimal as the announcement for the AMD Ryzen 8000G series occurred on
+the 8th of January 2024, with this announcement AMD claims to have created the Ryzen 7 8700G which has
+the world’s most powerful in-built graphics. This was likely a major factor to increase the AMD share price by
+around 80% by the end of January since the announcement was made. Following this, AMD stock has been
+rising since which could also be complemented by the spillover effect of their competitor, Nvidia having a
+steadily increasing stock market over 2024. These stable inclines in stock prices led to the peak price in our
+trimmed data frame on March 8th 2024.
+The final date of our data frame still maintaining a high closing price compared to previous dates meant that
+selling all shares on the final day created greater profits than our profit-taking strategy which sold most of its
+shares in December and January.
+EXTRA WORK BELOW USING MY IDEA FOR AN IMPROVED STRATEGY:
 ```r
-# Fill your code here and Disucss
+#STRATEGY TO FURTHER IMPROVE PL:
+#Set up a system that makes it so that if previous shares are 0, sell isn't prioritised over
+buy and adjust AVG PRICE VARIABLE to current close value
+# Load data from CSV file
+amd_df <- read.csv("AMD.csv")
+# Convert the date column to Date type and Adjusted Close as numeric
+amd_df$date <- as.Date(amd_df$Date)
+amd_df$close <- as.numeric(amd_df$Adj.Close)
+amd_df <- amd_df[, c("date", "close")]
+# Initialise start_date/end_date
+start_date <- as.Date("2023-04-17") #2023-07-8 (date before floating point precision occurs)
+end_date <- as.Date("2024-03-13")
+#set trading period
+amd_df <- amd_df[amd_df$date >= start_date & amd_df$date <= end_date, ]
+#reset the rows in the numbers column
+row.names(amd_df) <- NULL
+# Initialize columns for trade type, cost/proceeds, and accumulated shares in amd_df
+amd_df$trade_type <- NA
+amd_df$costs_proceeds <- NA # Corrected column name
+amd_df$accumulated_shares <- 0 # Initialize if needed for tracking
+# Initialize variables for trading logic
+previous_price <- 0
+share_size <- 100
+accumulated_shares <- 0
+#Looping
+for (i in 1:nrow(amd_df)) {
+# Other Variables
+current_day <- as.Date(amd_df$date[i])
+current_price <- amd_df$close[i]
+#Previous Price
+if(i==1){
+ previous_price <- 0
+ amd_df$previous_price[i] <- previous_price
+}else {
+ previous_day<- as.Date(amd_df$date[i-1])
+ previous_price <- amd_df$close[i-1]
+ amd_df$previous_price[i] <- previous_price
+ }
+final_day <- as.Date(max(amd_df$date))
+#Check previous_price, buy/sell and update costs_proceeds
+ if(previous_price == 0) {
+amd_df$trade_type[i] <-"buy"
+amd_df$costs_proceeds[i] <- amd_df$close[i]*-share_size
+}
+{
+ #Make sure it doesn't buy on final day as well as setting up buy algo
+if(current_price < previous_price && current_day != final_day) {
+amd_df$trade_type[i] <- "buy"
+amd_df$costs_proceeds[i] <- amd_df$close[i]*-share_size
+}
+if(is.na(amd_df$costs_proceeds[i])){
+ amd_df$costs_proceeds[i] <- 0
+}
+ }
+#Check trade_type and update accumulated_shares
+{
+ if(!is.na(amd_df$trade_type[i]) && amd_df$trade_type[i] == "buy") {
+ accumulated_shares<- accumulated_shares+share_size
+amd_df$accumulated_shares[i] <- accumulated_shares
+} else {
+ amd_df$accumulated_shares[i]<- accumulated_shares
+}
+ if(is.na(amd_df$trade_type[i])){
+ amd_df$avg_purchase_price[i] <- amd_df$avg_purchase_price[i-1]
+ }
+}
+{
+#Last Day
+ if(current_day == final_day){
+ amd_df$trade_type[i] <- "sell"
+ amd_df$costs_proceeds[i] <- amd_df$accumulated_shares[i-1]*amd_df$close[i]
+ amd_df$accumulated_shares[i] <- 0
+ }
+}
+ }
+View(amd_df)
+# Create variable when price increases by 30% from avg purchase price when accumulated shares
+are not 0
+# OPTION 1
+#initialise column
+amd_df$avg_purchase_price <- 0
+amd_df$total_investment <- 0
+amd_df$PL <- 0
+#initialise variables
+amd_df$avg_purchase_price[1] <- amd_df$close[1]
+amd_df$total_investment[1] <- amd_df$costs_proceeds[1]*-1
+amd_df$PL[1] <- amd_df$costs_proceeds[1]
+#Loop
+for (i in 2:nrow(amd_df)){
+ # Update accumulated shares
+ if(!is.na(amd_df$trade_type[i]) && amd_df$trade_type[i] == "buy"){
+ amd_df$accumulated_shares [i] <- amd_df$accumulated_shares[i-1] + share_size
+ }else{amd_df$accumulated_shares[i] <- amd_df$accumulated_shares[i]}
+ # Strategy
+
+ if(amd_df$accumulated_shares[i] == 0){
+ amd_df$avg_purchase_price[i] <- amd_df$avg_purchase_price[i-1]
+ }
+
+ if(amd_df$accumulated_shares[i-1] == 0 && (current_price < previous_price)){
+ amd_df$trade_type[i] <- "buy"
+ amd_df$costs_proceeds[i] <- amd_df$close[i]*-share_size
+ #Reset to new avg purchase price
+ amd_df$avg_purchase_price[i] <- amd_df$close[i]
+ amd_df$total_investment[i] <- 0
+ }
+ # Find running weighted average purchase price
+ if(!is.na(amd_df$trade_type[i]) && amd_df$trade_type[i] == "buy"){
+ amd_df$total_investment[i] <- -amd_df$costs_proceeds[i] + amd_df$total_investment[i-1]
+ amd_df$avg_purchase_price[i] <- amd_df$total_investment[i]/amd_df$accumulated_shares[i]
+ }else{
+ amd_df$total_investment[i] <- amd_df$total_investment[i-1]
+ amd_df$avg_purchase_price[i] <- amd_df$avg_purchase_price[i-1]
+ }
+
+
+ # Create variable when price increases by 30% from avg purchase price
+ if(amd_df$accumulated_shares[i-1] != 0){
+ sell_price_variable <- amd_df$close[i] >= 1.3*amd_df$avg_purchase_price[i]
+ }else{
+ sell_price_variable <- 0
+ }
+ # Fix issue with previous buy changing to sell affecting avg_purchase_price
+ if(sell_price_variable && amd_df$trade_type[i]=="buy" && !is.na(amd_df$trade_type[i])){
+ amd_df$avg_purchase_price[i] <- amd_df$avg_purchase_price[i-1]
+ }
+
+
+ if(sell_price_variable && amd_df$accumulated_shares[i] != 0){
+ # update trade_type
+ amd_df$trade_type[i] <- "sell"
+ # sell half of accumulated_shares using integer division to not half decimal shares
+ amd_df$accumulated_shares[i] <- amd_df$accumulated_shares[i-1]-amd_df$accumulated_shares
+[i-1]%/%2
+ amd_df$total_investment[i] <- amd_df$total_investment[i-1]-amd_df$total_investment[i1]%/%2
+ # update cost_proceeds
+ amd_df$costs_proceeds[i] <- amd_df$accumulated_shares[i-1]%/%2*amd_df$close[i]
+ }
+
+ # Account for different scenarios
+ if(amd_df$accumulated_shares[i-1] == 1){
+ amd_df$accumulated_shares[i] <- 0
+ }
+ if(amd_df$accumulated_shares[i] == 0){
+ amd_df$avg_purchase_price[i] <- amd_df$avg_purchase_price[i-1]
+amd_df$total_investment[i] <- amd_df$total_investment[i-1]
+ }
+ if(is.na(amd_df$trade_type[i])){
+ amd_df$accumulated_shares[i] <- amd_df$accumulated_shares[i-1]
+ }
+ #Update PL
+ amd_df$PL[i] <- amd_df$PL[i-1] + amd_df$costs_proceeds[i]
+ }
+#Last Day
+ if(current_day == final_day){
+ amd_df$trade_type[i] <- "sell"
+ amd_df$costs_proceeds[i] <- amd_df$accumulated_shares[i-1]*amd_df$close[i]
+ amd_df$accumulated_shares[i] <- 0
+ }
+# Find and Print Profit/Loss
+total_pl <- sum(amd_df$costs_proceeds)
+print(total_pl)
+
+#Invested Capital
+invested_capital <- -sum(amd_df$costs_proceeds[amd_df$trade_type == "buy"], na.rm = TRUE)
+print(invested_capital)
+
+#Calculate ROI
+roi <- total_pl/invested_capital*100
+print(roi)
+
+
+
 ```
-
-Sample Discussion: On Wednesday, December 6, 2023, AMD CEO Lisa Su discussed a new graphics processor designed for AI servers, with Microsoft and Meta as committed users. The rise in AMD shares on the following Thursday suggests that investors believe in the chipmaker's upward potential and market expectations; My first strategy earned X dollars more than second strategy on this day, therefore providing a better ROI.
-
-
-
+I created this improved strategy before I realised we had to use a weighted mean, without a weighted mean
+there were a lot of sells to the point where you would often have 0 shares. I have adjusted this strategy to work
+for a weighted mean, and thus if there was a date in which this strategy saw frequent selling to the point of 0
+accumulated shares, this would readjust the avg_purchase_price so that the weighting is 100% of new shares.
+Conclusion achieved using non-weighted mean: As we can see using this updated method we improve the
+output of profit we get from $267,822.6 to $300,755.2 . The reason that our ROI is so low I believe is because
+of the way we were told to calculate invested capital as it doesn’t include reusing that capital when we sell and
+then buy again. I believe that the invested capital should be the negative of the minimum value of the
+e.g. (-min(amd_df$PL)) which provides us for this set of data using our improved strategy with $751,083 as
+opposed to $1,225,476 and thus our ROI is 40.4% instead of 24.5%. Whilst this is not larger than the 57%
+acheived from step 2, if the final date for step 2 was not as favourable this strategy would achieve a higher ROI
+than the ROI of step 2.
 
