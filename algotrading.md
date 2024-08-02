@@ -458,11 +458,11 @@ there were a lot of sells to the point where you would often have 0 shares. I ha
 for a weighted mean, and thus if there was a date in which this strategy saw frequent selling to the point of 0
 accumulated shares, this would readjust the avg_purchase_price so that the weighting is 100% of new shares.
 Conclusion achieved using non-weighted mean: As we can see using this updated method we improve the
-output of profit we get from $267,822.6 to $300,755.2 . The reason that our ROI is so low I believe is because
+output of profit we get from `$267,822.6` to `$300,755.2` . The reason that our ROI is so low I believe is because
 of the way we were told to calculate invested capital as it doesn’t include reusing that capital when we sell and
 then buy again. I believe that the invested capital should be the negative of the minimum value of the
-e.g. (-min(amd_df$PL)) which provides us for this set of data using our improved strategy with $751,083 as
-opposed to $1,225,476 and thus our ROI is 40.4% instead of 24.5%. Whilst this is not larger than the 57%
+e.g. (-min(amd_df$PL)) which provides us for this set of data using our improved strategy with `$751,083` as
+opposed to `$1,225,476` and thus our ROI is 40.4% instead of 24.5%. Whilst this is not larger than the 57%
 acheived from step 2, if the final date for step 2 was not as favourable this strategy would achieve a higher ROI
 than the ROI of step 2.
 
